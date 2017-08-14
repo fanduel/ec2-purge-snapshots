@@ -126,14 +126,6 @@ opts_parser = OptionParser.new do |opts|
   end
   opts.separator ""
   opts.separator "OPTIONAL options:"
-  opts.on("-a", "--access-key-file FILENAME", "The path to a file containing the AWS access key to use,", 
-                                              "otherwise use the value of $AWS_ACCESS_KEY") do |afile|
-    options[:access_file] = afile
-  end
-  opts.on("-e", "--secret-key-file FILENAME", "The path to a file containing the AWS secret key to use,", 
-                                              "otherwise use the value of $AWS_SECRET_KEY") do |sfile|
-    options[:secret_file] = sfile
-  end
   opts.on("-n", "--noop", "Don't actually delete, but print what would be done") do |n|
     options[:noop] = true
   end
@@ -179,11 +171,6 @@ START_WEEKS_AFTER = options[:hours] + (options[:days] * 24)
 START_MONTHS_AFTER = START_WEEKS_AFTER + (options[:weeks] * 24 * 7)
 DELETE_BEFORE_DATE = Date.parse((Time.at(NOW.to_i - (START_MONTHS_AFTER * HOUR))).to_s) << options[:months]
 
-aws_access_key = options[:access_file] ? File.read(options[:access_file]).strip : ENV['AWS_ACCESS_KEY']
-aws_secret_key = options[:secret_file] ? File.read(options[:secret_file]).strip : ENV['AWS_SECRET_KEY']
-
-# Check that the AWS credentials are somewhat sensible
-if aws_access_key and aws_access_key != '' and aws_secret_key and aws_secret_key != ''
   ec2 = AWS::EC2::Base.new(:access_key_id => aws_access_key, :secret_access_key => aws_secret_key)
   snapshots = []
   snapshots_set = ec2.describe_snapshots(:owner => "self")
@@ -231,10 +218,3 @@ if aws_access_key and aws_access_key != '' and aws_secret_key and aws_secret_key
     puts "No snapshots found, exiting."
     exit 2
   end
-
-else
-  puts "No AWS access/secret keys specified, aborting."
-  puts "#{$0} --help for more info"
-  puts ""
-  exit 2
-end
