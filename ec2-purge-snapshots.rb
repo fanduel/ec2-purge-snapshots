@@ -171,48 +171,48 @@ START_WEEKS_AFTER = options[:hours] + (options[:days] * 24)
 START_MONTHS_AFTER = START_WEEKS_AFTER + (options[:weeks] * 24 * 7)
 DELETE_BEFORE_DATE = Date.parse((Time.at(NOW.to_i - (START_MONTHS_AFTER * HOUR))).to_s) << options[:months]
 
-  ec2 = Aws::EC2::Client.new(:region => 'us-east-1')
-  snapshots = []
-  snapshots_set = ec2.describe_snapshots(:owner_ids => ["self"])
-  if snapshots_set and snapshots_set.snapshots
-    snapshots = snapshots_set.snapshots.find_all {|s| s['state'] == "completed"}
-  end
+ec2 = Aws::EC2::Client.new(:region => 'us-east-1')
+snapshots = []
+snapshots_set = ec2.describe_snapshots(:owner_ids => ["self"])
+if snapshots_set and snapshots_set.snapshots
+  snapshots = snapshots_set.snapshots.find_all {|s| s['state'] == "completed"}
+end
 
-  # Make sure we have some snapshots to work with
-  unless snapshots.empty?
-    volume_counts   = {}
-    if filter_tags.empty? 
-      if options[:volumes].size == 1 and options[:volumes][0] == "all"
-        volumes = snapshots.collect {|s| s['volume_id']}.uniq
-      else
-        volumes = options[:volumes]
-      end
-
-      volumes.each do |vol|
-        # Find snapshots for this volume and sort them by date (oldest first)
-        vol_snaps = snapshots.find_all {|s| s['volume_id'] == vol}.sort_by {|v| v['start_time']}
-        puts "---- VOLUME #{vol} (#{vol_snaps.size} snapshots) ---" unless options[:quiet]
-
-        purge_snapshots ec2, options, vol, vol_snaps, volume_counts  
-          
-      end      
+# Make sure we have some snapshots to work with
+unless snapshots.empty?
+  volume_counts   = {}
+  if filter_tags.empty? 
+    if options[:volumes].size == 1 and options[:volumes][0] == "all"
+      volumes = snapshots.collect {|s| s['volume_id']}.uniq
     else
-      vol_snaps = snapshots_set.snapshots.item.find_all {|s| s['state'] == "completed" && !s['tags'].nil? && filter_tags.all? {|f| s['tags'].item.detect {|t| t['key']==f[0] && t['value']==f[1]}} }.sort_by {|v| v['start_time']}
-      tag_id = filter_tags.collect{|f| "#{f[0]}=#{f[1]}"}.join(", ")  
-      purge_snapshots ec2, options, tag_id, vol_snaps, {}
+      volumes = options[:volumes]
     end
-    if not options[:xsilent] and not options[:no_summary]
-        puts ""
-        puts "SUMMARY:"
-        puts ""
-        volume_counts.each do |vol, counts|
-          puts "#{vol}:"
-          puts "  deleted: #{counts[0]}"
-          puts "  kept:    #{counts[1]}"
-          puts ""
-        end
-      end
+
+    volumes.each do |vol|
+      # Find snapshots for this volume and sort them by date (oldest first)
+      vol_snaps = snapshots.find_all {|s| s['volume_id'] == vol}.sort_by {|v| v['start_time']}
+      puts "---- VOLUME #{vol} (#{vol_snaps.size} snapshots) ---" unless options[:quiet]
+
+      purge_snapshots ec2, options, vol, vol_snaps, volume_counts  
+        
+    end      
   else
-    puts "No snapshots found, exiting."
-    exit 2
+    vol_snaps = snapshots_set.snapshots.item.find_all {|s| s['state'] == "completed" && !s['tags'].nil? && filter_tags.all? {|f| s['tags'].item.detect {|t| t['key']==f[0] && t['value']==f[1]}} }.sort_by {|v| v['start_time']}
+    tag_id = filter_tags.collect{|f| "#{f[0]}=#{f[1]}"}.join(", ")  
+    purge_snapshots ec2, options, tag_id, vol_snaps, {}
   end
+  if not options[:xsilent] and not options[:no_summary]
+      puts ""
+      puts "SUMMARY:"
+      puts ""
+      volume_counts.each do |vol, counts|
+        puts "#{vol}:"
+        puts "  deleted: #{counts[0]}"
+        puts "  kept:    #{counts[1]}"
+        puts ""
+      end
+    end
+else
+  puts "No snapshots found, exiting."
+  exit 2
+end
