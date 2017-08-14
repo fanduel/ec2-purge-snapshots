@@ -17,7 +17,7 @@ def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
   keep_count      = 0
 
   vol_snaps.each do |snap|
-    snap_date = Time.parse(snap['startTime']).localtime
+    snap_date = Time.parse(snap['start_time'].to_s).localtime
     snap_Date = Date.parse(snap_date.to_s)
     snap_age = ((NOW.to_i - snap_date.to_i).to_f / HOUR.to_f).to_i
     # Hourly 
@@ -44,25 +44,25 @@ def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
       if start_date_str != prev_start_date && snap_Date > DELETE_BEFORE_DATE
         # Keep
         prev_start_date = start_date_str
-        msg =  "Keeping #{snap['snapshotId']}: #{snap_date}, #{(snap_age.to_f / 24.to_f).to_i} "
+        msg =  "Keeping #{snap['snapshot_id']}: #{snap_date}, #{(snap_age.to_f / 24.to_f).to_i} "
         msg += "days old - #{type_str} of #{start_date_str}" 
         puts msg unless options[:quiet] 
         keep_count += 1
       else
         # Never delete the newest snapshot
-        if snap['snapshotId'] == newest['snapshotId']
-          msg =  "Keeping #{snap['snapshotId']}: #{snap_date}, #{snap_age} hours old - "
+        if snap['snapshot_id'] == newest['snapshot_id']
+          msg =  "Keeping #{snap['snapshot_id']}: #{snap_date}, #{snap_age} hours old - "
           msg += "will never delete newest snapshot" 
           puts msg unless options[:quiet]
           keep_count += 1
         else
           # Delete it
           not_really_str = options[:noop] ? "(not really) " : ""
-          msg = "- Deleting #{not_really_str}#{snap['snapshotId']}: #{snap_date}, "
+          msg = "- Deleting #{not_really_str}#{snap['snapshot_id']}: #{snap_date}, "
           msg += "#{(snap_age.to_f / 24.to_f).to_i} days old" 
           puts msg unless options[:silent]
           begin
-            ec2.delete_snapshot(:snapshot_id => snap['snapshotId']) unless options[:noop]
+            ec2.delete_snapshot(:snapshot_id => snap['snapshot_id']) unless options[:noop]
           rescue AWS::Error => e
             puts e
           else
@@ -72,7 +72,7 @@ def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
         end
       end
     else
-      msg =  "Keeping #{snap['snapshotId']}: #{snap_date}, #{snap_age} hours old - "
+      msg =  "Keeping #{snap['snapshot_id']}: #{snap_date}, #{snap_age} hours old - "
       msg += "#{options[:hours]}-hour threshold"
       puts msg unless options[:quiet]
       keep_count += 1
@@ -158,7 +158,7 @@ ENV["EC2_URL"] = options[:url] if options[:url]
 
 # HACK: Had to move this here so it would pick up the environment variable EC2_URL, 
 # which is set after the options are parsed. Is there a better way to do this?
-require 'AWS'       # sudo gem install amazon-ec2
+require 'aws-sdk'       # sudo gem install aws-sdk
 
 # Check for mandatory options/rules
 if (options[:volumes].nil? and filter_tags.empty?) or options[:hours].nil? or options[:days].nil? or 
@@ -171,13 +171,11 @@ START_WEEKS_AFTER = options[:hours] + (options[:days] * 24)
 START_MONTHS_AFTER = START_WEEKS_AFTER + (options[:weeks] * 24 * 7)
 DELETE_BEFORE_DATE = Date.parse((Time.at(NOW.to_i - (START_MONTHS_AFTER * HOUR))).to_s) << options[:months]
 
-  ec2 = AWS::EC2::Base.new(:access_key_id => aws_access_key, :secret_access_key => aws_secret_key)
+  ec2 = Aws::EC2::Client.new(:region => 'us-east-1')
   snapshots = []
-  snapshots_set = ec2.describe_snapshots(:owner => "self")
-  if snapshots_set and snapshots_set.snapshotSet and 
-                       snapshots_set.snapshotSet.item and not 
-                       snapshots_set.snapshotSet.item.empty?
-    snapshots = snapshots_set.snapshotSet.item.find_all {|s| s['status'] == "completed"}
+  snapshots_set = ec2.describe_snapshots(:owner_ids => ["self"])
+  if snapshots_set and snapshots_set.snapshots
+    snapshots = snapshots_set.snapshots.find_all {|s| s['state'] == "completed"}
   end
 
   # Make sure we have some snapshots to work with
@@ -185,21 +183,21 @@ DELETE_BEFORE_DATE = Date.parse((Time.at(NOW.to_i - (START_MONTHS_AFTER * HOUR))
     volume_counts   = {}
     if filter_tags.empty? 
       if options[:volumes].size == 1 and options[:volumes][0] == "all"
-        volumes = snapshots.collect {|s| s['volumeId']}.uniq
+        volumes = snapshots.collect {|s| s['volume_id']}.uniq
       else
         volumes = options[:volumes]
       end
-  
+
       volumes.each do |vol|
         # Find snapshots for this volume and sort them by date (oldest first)
-        vol_snaps = snapshots.find_all {|s| s['volumeId'] == vol}.sort_by {|v| v['startTime']}
+        vol_snaps = snapshots.find_all {|s| s['volume_id'] == vol}.sort_by {|v| v['start_time']}
         puts "---- VOLUME #{vol} (#{vol_snaps.size} snapshots) ---" unless options[:quiet]
-  
+
         purge_snapshots ec2, options, vol, vol_snaps, volume_counts  
           
       end      
     else
-      vol_snaps = snapshots_set.snapshotSet.item.find_all {|s| s['status'] == "completed" && !s['tagSet'].nil? && filter_tags.all? {|f| s['tagSet'].item.detect {|t| t['key']==f[0] && t['value']==f[1]}} }.sort_by {|v| v['startTime']}
+      vol_snaps = snapshots_set.snapshots.item.find_all {|s| s['state'] == "completed" && !s['tags'].nil? && filter_tags.all? {|f| s['tags'].item.detect {|t| t['key']==f[0] && t['value']==f[1]}} }.sort_by {|v| v['start_time']}
       tag_id = filter_tags.collect{|f| "#{f[0]}=#{f[1]}"}.join(", ")  
       purge_snapshots ec2, options, tag_id, vol_snaps, {}
     end
