@@ -63,7 +63,7 @@ def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
           puts msg unless options[:silent]
           begin
             ec2.delete_snapshot(:snapshot_id => snap['snapshot_id']) unless options[:noop]
-          rescue AWS::Error => e
+          rescue Aws::Error => e
             puts e
           else
             delete_count += 1
